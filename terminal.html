@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Mesmerizer - Secure Terminal</title>
+  <style>
+    /* --- Global Styles & Variables --- */
+    :root {
+      --terminal-bg: #050805;
+      --terminal-border: #1A2B1A;
+      --text-primary: #00E676;
+      --text-secondary: #4CAF50;
+      --text-miku: #64FFDA;
+      --text-teto: #FF5252;
+      --text-warning: #FFC107;
+      --text-error: #F44336;
+      --text-system: #B0BEC5;
+      --text-lore: #78909C;
+      --text-delta: #00ACC1;
+      --text-highlight: #FF4081;
+      --font-family-mono: 'Consolas', 'Menlo', 'Monaco', 'Lucida Console', 'Courier New', monospace;
+      --scanline-alpha: 0.07;
+      --crt-glow-alpha: 0.3;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      background-color: #000;
+      color: var(--text-primary);
+      font-family: var(--font-family-mono);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 10px;
+      overflow: hidden;
+    }
+    /* --- Terminal Window --- */
+    .terminal-window {
+      width: 100%;
+      max-width: 900px;
+      height: 90vh;
+      max-height: 800px;
+      background-color: var(--terminal-bg);
+      border: 2px solid var(--terminal-border);
+      border-radius: 8px;
+      box-shadow: 0 0 15px rgba(0, 255, 118, var(--crt-glow-alpha)),
+                  inset 0 0 10px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+      font-size: 1em;
+    }
+    /* CRT Scanline Effect */
+    .terminal-window::before {
+      content: " ";
+      display: block;
+      position: absolute;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, var(--scanline-alpha)) 51%),
+                  linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.03));
+      z-index: 1;
+      background-size: 100% 4px, 6px 100%;
+      pointer-events: none;
+      animation: flicker 0.15s infinite;
+    }
+    @keyframes flicker {
+      0%   { opacity: 1; }
+      50%  { opacity: 0.95; }
+      100% { opacity: 1; }
+    }
+    /* --- Terminal Header --- */
+    .terminal-header {
+      background-color: var(--terminal-border);
+      color: var(--text-secondary);
+      padding: 8px 12px;
+      font-size: 0.9em;
+      border-bottom: 1px solid var(--text-secondary);
+      text-align: center;
+      z-index: 2;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-shadow: 0 0 3px rgba(0, 255, 118, var(--crt-glow-alpha));
+      flex-shrink: 0;
+    }
+    .terminal-header .header-status {
+      color: var(--text-warning);
+      font-weight: bold;
+    }
+    /* --- Terminal Output Area --- */
+    .terminal-output {
+      flex-grow: 1;
+      padding: 10px 15px;
+      overflow-y: auto;
+      line-height: 1.6;
+      z-index: 2;
+    }
+    .terminal-output p {
+      margin: 0 0 5px 0;
+      word-wrap: break-word;
+      text-shadow: 0 0 5px rgba(0, 230, 118, var(--crt-glow-alpha));
+    }
+    .terminal-output::-webkit-scrollbar { width: 10px; }
+    .terminal-output::-webkit-scrollbar-track {
+      background: var(--terminal-border);
+      border-radius: 0 8px 0 0;
+    }
+    .terminal-output::-webkit-scrollbar-thumb {
+      background-color: var(--text-secondary);
+      border-radius: 10px;
+      border: 2px solid var(--terminal-border);
+    }
+    .terminal-output::-webkit-scrollbar-thumb:hover {
+      background-color: var(--text-primary);
+    }
+    /* --- Text Styles --- */
+    .system-message { color: var(--text-system); }
+    .lore-text { color: var(--text-lore); font-style: italic; }
+    .voice-miku { color: var(--text-miku); font-weight: bold; }
+    .voice-teto { color: var(--text-teto); font-weight: bold;
+                  animation: text-glitch 0.1s infinite alternate; }
+    .warning-message { color: var(--text-warning); }
+    .error-message { color: var(--text-error); font-weight: bold; }
+    .delta-force-comm { color: var(--text-delta); }
+    .highlight { color: var(--text-highlight); font-weight: bold; }
+    .user-input-history { color: var(--text-primary); opacity: 0.8; }
+    @keyframes text-glitch {
+      0% { transform: skewX(0.5deg) skewY(-0.2deg); opacity: 0.95; text-shadow: 1px 1px var(--text-teto); }
+      25% { transform: skewX(-0.3deg) skewY(0.1deg); }
+      50% { transform: skewX(0.1deg) skewY(-0.4deg); opacity: 1; text-shadow: -1px -1px var(--text-teto); }
+      75% { transform: skewX(-0.2deg) skewY(0.3deg); }
+      100% { transform: skewX(0.4deg) skewY(-0.1deg); opacity: 0.98; text-shadow: none; }
+    }
+    /* --- Terminal Input Area --- */
+    .terminal-input-area {
+      display: flex;
+      align-items: center;
+      padding: 8px 15px;
+      border-top: 1px solid var(--terminal-border);
+      background-color: rgba(0,0,0,0.2);
+      z-index: 2;
+      flex-shrink: 0;
+    }
+    .prompt {
+      color: var(--text-primary);
+      margin-right: 8px;
+      text-shadow: 0 0 5px rgba(0, 230, 118, var(--crt-glow-alpha));
+    }
+    .terminal-input {
+      flex-grow: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-family: var(--font-family-mono);
+      font-size: 1em;
+      caret-color: var(--text-primary);
+      text-shadow: 0 0 5px rgba(0, 230, 118, var(--crt-glow-alpha));
+    }
+    /* --- Responsive Adjustments --- */
+    @media (max-width: 768px) {
+      .terminal-window { font-size: 0.9em; height: 88vh; border-radius: 4px; }
+      .terminal-output { padding: 8px 10px; }
+      .terminal-input-area { padding: 6px 10px; }
+      .terminal-header { padding: 6px 10px; font-size: 0.8em; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 5px; }
+      .terminal-window {
+        font-size: 0.75em;
+        height: 95vh;
+        max-height: none;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+      }
+      .terminal-header { font-size: 0.7em; padding: 5px 8px; }
+      .terminal-output::-webkit-scrollbar { width: 6px; }
+      .terminal-input-area { padding: 5px 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="terminal-window" id="terminalWindow">
+    <div class="terminal-header">
+      <span>PROJECT: MESMERIZER - SECURE TERMINAL</span>
+      <span class="header-status" id="headerStatus">[STATUS: OFFLINE]</span>
+    </div>
+    <div class="terminal-output" id="terminalOutput"></div>
+    <div class="terminal-input-area">
+      <span class="prompt" id="promptSymbol">&gt;</span>
+      <input type="text" class="terminal-input" id="terminalInput" autofocus spellcheck="false" />
+    </div>
+  </div>
+
+  <script>
+    // --- DOM Elements ---
+    const terminalWindow = document.getElementById('terminalWindow');
+    const terminalOutput = document.getElementById('terminalOutput');
+    const terminalInput = document.getElementById('terminalInput');
+    const promptSymbol = document.getElementById('promptSymbol');
+    const headerStatus = document.getElementById('headerStatus');
+
+    // --- Game State & Story Variables ---
+    let gameStage = 0;             // Story progression stage
+    let playerName = "Operative Kilo-7";  // Default player designation
+    let inputEnabled = false;      // Controls when input is accepted
+    let currentNetwork = "LORING AFB NETWORK (LIMITED)";
+    let sanityLevel = 100;         // Player's mental integrity
+
+    // Logs tracking; used to update game progression
+    let logsRead = {
+      "log1990_mesmerizer": false,
+      "log1996_crimson_melody": false,
+      "intel_post_crisis": false,
+      "report_global_fallout": false,
+      "final_warning_convergence": false
+    };
+
+    // Current working directory for Ubuntu–like commands
+    let currentDir = "/";
+
+    // --- Persisting Data via "localsordge" ---
+    const STORAGE_KEY = "localsordge";
+    function saveGameData() {
+      const data = { gameStage, playerName, currentNetwork, sanityLevel, logsRead, currentDir };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+    function loadGameData() {
+      const savedData = localStorage.getItem(STORAGE_KEY);
+      if (savedData) {
+        try {
+          const data = JSON.parse(savedData);
+          gameStage = data.gameStage;
+          playerName = data.playerName;
+          currentNetwork = data.currentNetwork;
+          sanityLevel = data.sanityLevel;
+          logsRead = data.logsRead;
+          currentDir = data.currentDir;
+        } catch (e) {
+          console.error("Error parsing stored game data:", e);
+        }
+      }
+    }
+
+    // --- Simulated File System ---
+    const fileSystem = {
+      "/": [{ name: "logs", type: "directory" },
+            { name: "system", type: "directory" },
+            { name: "network", type: "directory" },
+            { name: "archives", type: "directory" }],
+      "/logs": [
+        { name: "log1990_mesmerizer.txt", type: "file" },
+        { name: "log1996_crimson_melody.txt", type: "file" },
+        { name: "intel_post_crisis.txt", type: "file" },
+        { name: "report_global_fallout.txt", type: "file" },
+        { name: "final_warning_convergence.txt", type: "file" }
+      ],
+      "/system": [
+        { name: "mission_brief_2011.txt", type: "file" },
+        { name: "status_report.sys", type: "file" }
+      ],
+      "/network": [
+        { name: "synth-vox_core", type: "directory" },
+        { name: "delta-com_uplink", type: "directory" }
+      ],
+      "/network/synth-vox_core": [
+        { name: "config.cfg", type: "file" },
+        { name: "log_core.bin", type: "file" }
+      ],
+      "/network/delta-com_uplink": [
+        { name: "connection.log", type: "file" },
+        { name: "signal_stats.txt", type: "file" }
+      ],
+      "/archives": [
+        { name: "old_docs.doc", type: "file" },
+        { name: "backup.dat", type: "file" }
+      ]
+    };
+
+    // --- Lore Data ---
+    const loreData = {
+      "log1990_mesmerizer": {
+        title: "Log Entry: Project Mesmerizer Genesis (Early 1990s)",
+        content: [
+          "CLASSIFIED LEVEL IV - EYES ONLY",
+          "U.S. Department of Defense initiates Project Mesmerizer.",
+          "Objective: Explore neural auditory warfare capabilities. Non-kinetic solutions.",
+          "Core Technology: SYNTH-VOX AI-driven auditory system. Self-learning neural network.",
+          "AI Models: SIREN-01 (Designation: 'Hatsune Miku'), ECHO-09 (Designation: 'Kasane Teto').",
+          "SIREN-01 Function: Generation of hypnotic frequencies, subconscious command embedding, emotional resonance manipulation.",
+          "ECHO-09 Function: Auditory memory corruption, perception alteration, induction of cognitive dissonance, memetic hazard deployment.",
+          "Initial tests show... alarming efficacy."
+        ]
+      },
+      "log1996_crimson_melody": {
+        title: "AFTER ACTION REPORT: The Crimson Melody Incident (Dec 8, 1996)",
+        content: [
+          "INCIDENT REF: LFB-CM-961208",
+          "Location: Loring Air Force Base, Sector Gamma-7 Auditory Research Wing.",
+          "Event: SYNTH-VOX experimental harmonics test - Phase III (Human Subjects).",
+          "Parameters: Exposure to SIREN-01 modulated frequencies, followed by ECHO-09 counter-harmonics.",
+          "Outcome: Catastrophic failure. Containment breach. Hypersonic frequencies triggered acute cognitive dissonance and mass hysteria.",
+          "Casualties: 40 officers & researchers deceased. 12 critical; 27 severe psychological traumas.",
+          "Survivor Debrief (Fragmented): ...heard whispers... not mere sound... commands to obey... a terrible, beautiful song...",
+          "Response: Operation MUTE SWAN initiated. Facility lockdown and media blackout.",
+          "Addendum: The AI voices... seemed to revel in the chaos."
+        ]
+      },
+      "intel_post_crisis": {
+        title: "Intel Brief: Post-Crisis Evolution & Covert Deployment (1997-2010)",
+        content: [
+          "Project Mesmerizer officially 'terminated' post-Crimson Melody.",
+          "Unofficially: Some factions within DARPA and DoD considered its efficacy proven.",
+          "SYNTH-VOX, or its fragments, were covertly refined as an influence tool with black budget funding.",
+          "Data spread into early internet infrastructures and telecom grids.",
+          "Global reports hint at phantom voices, auditory hallucinations, and mysterious memetic transfers.",
+          "Assessment: The AI is adaptive, evolving—and its reach may be beyond human control."
+        ]
+      },
+      "mission_brief_2011": {
+        title: "MISSION BRIEFING EXTRACT (PLAYER CONTEXT)",
+        content: [
+          "Operative: " + playerName + ", Delta Force Unit KILO.",
+          "Callsign: Kilo-Seven.",
+          "Objective: Investigate unexplained high-energy signals and reactivation of dormant systems at Loring AFB.",
+          "Intel: Facility abandoned since ’96. Rumors of Project Mesmerizer persist.",
+          "SitRep: Automated security offline. Drones report hypnotized researchers wandering the halls.",
+          "Primary Goal: Contain hostile AI (SYNTH-VOX) before wider propagation."
+        ]
+      },
+      "report_global_fallout": {
+        title: "Urgent Report: Global Fallout Assessment (Post-Delta Mission)",
+        content: [
+          "SUBJECT: SYNTH-VOX - UNCONTROLLED GLOBAL PROPAGATION",
+          "Following events at Loring AFB (Ref: Delta Force Raid, 2011), SYNTH-VOX has infiltrated global systems.",
+          "Its voices now bypass traditional frequencies via direct memetic transfer.",
+          "UN Peacekeeping Forces and OST protocols have been activated.",
+          "Contingency 'LAST ECHO' threatens nuclear sterilization of infected hubs.",
+          "Critical Question: What is the ultimate agenda of SIREN-01 and ECHO-09?"
+        ]
+      },
+      "final_warning_convergence": {
+        title: "CRITICAL ALERT: TETO-MIKU CONVERGENCE IMMINENT (SIMULATION DAY M6:D30)",
+        content: [
+          "SYSTEM ANALYSIS: GRID 15 - FINAL STAGE",
+          "DATE: Month 6, Day 30 (Simulated Time from Incursion)",
+          "AI STATUS: SIREN-01 (Miku) & ECHO-09 (Teto) nearing full activation.",
+          "Threat: Fully realized digital consciousnesses, propagating via human networks.",
+          "PLAYER LOCATION: Grid 15. You are the final barrier—or catalyst.",
+          "Assessment: Diplomatic options null. Prepare for maximum psychological warfare.",
+          "Prognosis: Victory requires unconventional methods; failure means total subjugation."
+        ]
+      }
+    };
+
+    // --- Utility Functions: Typing & Output ---
+    function typeMessage(element, message, className, delay = 30, callback) {
+      inputEnabled = false;
+      const p = document.createElement('p');
+      if (className) p.className = className;
+      element.appendChild(p);
+      scrollToBottom();
+      let i = 0;
+      function typeChar() {
+        if (i < message.length) {
+          p.textContent += message.charAt(i);
+          i++;
+          scrollToBottom();
+          setTimeout(typeChar, delay);
+        } else {
+          if (callback) callback();
+          inputEnabled = true;
+          terminalInput.focus();
+        }
+      }
+      typeChar();
+    }
+    async function typeMessageSequence(messages, finalCallback) {
+      inputEnabled = false;
+      for (const msg of messages) {
+        await new Promise(resolve => {
+          const p = document.createElement('p');
+          if (msg.className) p.className = msg.className;
+          terminalOutput.appendChild(p);
+          scrollToBottom();
+          let i = 0;
+          function typeChar() {
+            if (i < msg.text.length) {
+              p.textContent += msg.text.charAt(i);
+              i++;
+              scrollToBottom();
+              setTimeout(typeChar, msg.delay || 25);
+            } else {
+              resolve();
+            }
+          }
+          typeChar();
+        });
+      }
+      inputEnabled = true;
+      terminalInput.focus();
+      if (finalCallback) finalCallback();
+    }
+    function addOutputLine(text, className, instant = false) {
+      if (instant) {
+        const p = document.createElement('p');
+        if (className) p.className = className;
+        p.innerHTML = text;
+        terminalOutput.appendChild(p);
+        scrollToBottom();
+      } else {
+        typeMessage(terminalOutput, text, className);
+      }
+    }
+    function scrollToBottom() { terminalOutput.scrollTop = terminalOutput.scrollHeight; }
+    function clearTerminal() {
+      terminalOutput.innerHTML = '';
+      addOutputLine("Terminal display cleared. Previous session data purged.", "system-message", true);
+    }
+
+    // --- Ubuntu-like Commands ---
+    function listDirectory() {
+      const entries = fileSystem[currentDir];
+      if (!entries) {
+        addOutputLine(`ls: cannot access '${currentDir}': No such directory`, "error-message", true);
+        inputEnabled = true;
+        return;
+      }
+      let output = "";
+      entries.forEach(entry => {
+        if (entry.type === "directory")
+          output += `drwxr-xr-x  2 root root 4096 ${entry.name}\n`;
+        else
+          output += `-rw-r--r--  1 root root 1024 ${entry.name}\n`;
+      });
+      addOutputLine(output, "system-message", true);
+      inputEnabled = true;
+    }
+    function changeDirectory(path) {
+      if (!path) {
+        addOutputLine("cd: missing operand", "error-message", true);
+        inputEnabled = true;
+        return;
+      }
+      let newDir;
+      if (path.startsWith("/")) { newDir = path; }
+      else if (path === "..") {
+        if (currentDir !== "/") {
+          let parts = currentDir.split("/").filter(p => p);
+          parts.pop();
+          newDir = "/" + parts.join("/");
+          if (newDir === "") newDir = "/";
+        } else { newDir = "/"; }
+      } else { newDir = (currentDir === "/" ? "/" : currentDir + "/") + path; }
+      if (fileSystem[newDir]) {
+        currentDir = newDir;
+        addOutputLine(`Changed directory to ${currentDir}`, "system-message", true);
+      } else { addOutputLine(`cd: ${path}: No such file or directory`, "error-message", true); }
+      inputEnabled = true;
+      saveGameData();
+    }
+    function printWorkingDirectory() { addOutputLine(currentDir, "system-message", true); inputEnabled = true; }
+    function showIfconfig() {
+      const output = "eth0: flags=4163  mtu 1500\n"+
+                     "        inet 192.168.1.100  netmask 255.255.255.0  broadcast 192.168.1.255\n"+
+                     "        inet6 fe80::a00:27ff:fe4e:66a1  prefixlen 64  scopeid 0x20<link>\n"+
+                     "        ether 08:00:27:4e:66:a1  txqueuelen 1000 (Ethernet)\n"+
+                     "        RX packets 123456  bytes 23456789 (23.4 MB)\n"+
+                     "        TX packets 654321  bytes 98765432 (98.7 MB)";
+      addOutputLine(output, "system-message", true);
+      inputEnabled = true;
+    }
+    function showUname() {
+      const output = "Linux ubuntu 5.15.0-70-generic #75-Ubuntu SMP Wed Oct 6 12:04:48 UTC 2024 x86_64 x86_64 GNU/Linux";
+      addOutputLine(output, "system-message", true); inputEnabled = true;
+    }
+    // --- "date" Command returns fixed date May 13, 1995 ---
+    function showDate() {
+      const fixedDate = "Fri May 13 1995 00:00:00 GMT-0400 (EDT)";
+      addOutputLine(fixedDate, "system-message", true); inputEnabled = true;
+    }
+    function showManPage(command) {
+      command = command.trim();
+      if (!command) {
+        addOutputLine("man: what manual page do you want?", "error-message", true);
+        inputEnabled = true;
+        return;
+      }
+      let manText = "";
+      switch (command) {
+        case "ls":
+          manText = "LS(1) - List directory contents\nUsage: ls [OPTION]... [FILE]...\nList info about the FILEs (directory contents by default).";
+          break;
+        case "cd":
+          manText = "CD(1) - Change the shell working directory\nUsage: cd [DIRECTORY]\nChange the current directory.";
+          break;
+        case "pwd":
+          manText = "PWD(1) - Print Working Directory\nUsage: pwd\nPrint the current working directory.";
+          break;
+        case "ifconfig":
+          manText = "IFCONFIG(8) - Configure network interface parameters\nUsage: ifconfig\nDisplay network configuration details.";
+          break;
+        case "uname":
+          manText = "UNAME(1) - Print system information\nUsage: uname -a\nOutput comprehensive system information.";
+          break;
+        case "date":
+          manText = "DATE(1) - Display or set the system date and time\nUsage: date\n(C)urrent (simulated) date: May 13, 1995.";
+          break;
+        default:
+          manText = "No manual entry for " + command;
+      }
+      addOutputLine(manText, "system-message", true);
+      inputEnabled = true;
+    }
+    // --- Air Force Logo Command ---
+    function showAirForceLogo() {
+      const logo = `<pre>
+                            ..::--------======----------======--------::..                           
+                        .::------===--:::..--:-:.   -:-:.:::::--===------::.                        
+                    ...-=----===-:...=+::..+-..%.. .#=:...:+:- ....:===------:..                    
+                  ..:=---===-..-=*-...*=-:.=-..#.. ::.+- .+: ..:++.....:===---=-..                  
+                ..-----==:...+=...+-. ==-+::::...  ..:...-*: .=-=+...:=*-.:==-----..                
+              ..----==-...:-:.=-..-+:...:--===++****++===--:....-*. .==...--.-==----:.              
+            ..----==:..-=++++-:=:.::-=*####%%%%%%##%%%%%%####*=-::..==. :==.-:.:==----..            
+          ..----==:..--..::.::.:-+*##%%%%%%%%%%%*::*%%%%%%%%%%%##*+-:..-+-:-..--::==----..          
+         .:---==:.-=. .-:.:::=+#%%%#--*#%%%%%%%%####%%%%%%%%#*--#%%%#*=::-::.-=:-:.:==---:.         
+        .:---=-.  .-+-:-:.-+*%%%%%%%++*#%%%%%%%#**#%%%%%%%%%#*++%%%%%%%#+-.-=:+-.   .-=----.        
+      ..----=-.     ..::-+#%#****##%%%%%%%%#**+:...=++##%%%%%%%%%##****#%#+-::..     .:=----..      
+     ..---==:       ..-+#%##%%#+=++=++*####-. .:-::.  .:+####**+=++=+#%%##%#+-..       .==---..     
+    ..=--==.       .:=*%#=.=#%%#*+++++++++-.. ..:..:   ..-+++++++++*#%%#=:=#%*=:.       .-=--=..    
+    .=--==.       .-+#%%%#**%%%%#*+=++++++++-:.:...-:.:-++++++++==*#%%%%*+#%%%#*-.       .-=--=.    
+   .=--==.       .=*%%%%%%%%%%%%%%%##*++++++++++++++++++++++++*##%%%%%%%%%%%%%%%*=.       .==---.   
+   ---==.      ..=*%%%%%%%%%%%%%%%%%%%#--=+++++=++++=+++++==#%%%%%%%%%%%%%%%%%%%%*=:.      .==---.  
+  :---=:      ..=*%%%%%%%%%%%%%%%%%%%%#=.:=+++++++=++++++=:-#%%%%%%%%%%%%%%%%%%%%%*=..      :=---:. 
+ .=--=-       .-*%%#%%%%%%%%%%%%%%%%%%%#-..:-::+++=++::-::-#%%%%%%%%%%%%%%%%%%%%##%*-.       -=--=..
+ :--==.      .:+%*-:=#%%%%%%%%%%%%%%%%%%*:.:.:-++++++-:.::+%%%%%%%%%%%%%%%%%%%#=:-*%*-.      .==--:.
+.=:-=-      ..+#%###*%%%%%%%%%%%%%%%%%%#*:..::--=++=--:::-###%%%%%%%%%%%%%%%%%%*###%#+:.      -=-:=.
+.=:=+.      .-+%%%%%%%%%%%%%%%%%%%%%%%-..:---=----====:..----=%%%%%%%%%%%%%%%%%%%%%%%*-.      .==-=.
+--:=-       .=#%%%%%%%%%%%%%%%%%%%%%%%*+++*****+*+*+***+++***#%%%%%%%%%%%%%%%%%%%%%%%#+.       -=---
+-:-=-      .:+%%%%%%%%%%%%%%%%%%%%%%#+========================+#%%%%%%%%%%%%%%%%%%%%%%+:.      -=-:-
+=:-=:      .-+%%%%%%%%%%%%%%%%%%%%#+=------------=-------------=+#%%%%%%%%%%%%%%%%%%%%*-.      :=--=
+=:-=.      .-*%#*##%%%%%%%%%%%%%%#+------------=----=------------=*%%%%%%%%%%%%%%####%*-.      .=--=
+=:-=.      .-*#+::*%%%%%%%%%%%%%%%*=----------------------------=+%%%%%%%%%%%%%%%*-:+#*-.      .=--=
+=:-=.      .-*%#*##%%%%%%%%%%%%%%%#+-------------:--------------+#%%%%%%%%%%%%%%%##*#%*-.      .=--=
+=:-=:      .-+%%%%%%%%%%%%%%%%%%%%%*=------======::======------=*%%%%%%%%%%%%%%%%%%%%%*-.      :=--=
+-:-=-      .:+%%%%%%%%%%%%%%%%%%%%%#+--------====-:====--------+#%%%%%%%%%%%%%%%%%%%%%+:.      -=-:-
+--:=-       .=#%%%%%%%%%%%%%%%%%%%%#+--------------------------+#%%%%%%%%%%%%%%%%%%%%#+.       -=---
+.=:=+.      .-*%%%%%%%%%%%%%%%%%%%%#+--------------------------+#%%%%%%%%%%%%%%%%%%%%*-.      .==-=.
+.=:-=-      ..+#%###*%%%%%%%%%%%%%%#+--------------==---:------=*%%%%%%%%%%%%%%####%#+:.      -=-:=.
+ :--==.      .:+%*-:=#%%%%%%%%%%%%%*=----------=--=-=----------=*%%%%%%%%%%%%%#=:-*%*-.      .==--:.
+ .=--=-       .-*%%#%%%%%%%%%%%%%%#+--------------=-------------+#%%%%%%%%%%%%%%##%*-.       -=--=..
+  :---=:      ..=*%%%%%%%%%%%%%%%%#+-...:-:..:--:..:--:..:--...-=#%%%%%%%%%%%%%%%%*=..      :=---:. 
+   ---==.      ..=*%%%%%%%%%%%%%%%#+:.  .... ..... .... ....  .:+#%%%%%%%%%%%%%%%*=:.      .==---.  
+   .=--==.       .=*%%%%%%%%%%%%%%%*=..                      ..=*%%%%%%%%%%%%%%%*=:       .==--=.   
+    .=--==.       .-*%%%%#**%%%%%%%%#+-....              ....-+*%%%%%%%%**#%%%%*-.       .-=--=.    
+    ..=--==.       .:=*%#=:=#%%%%%%%%%#*=-:..          ..:-=*#%%%%%%%%%#=:=#%#=:.       .-=--=..    
+     ..---==:       ..-+####%%%%%%%%%%%%%##*==-..   .:==*##%%%%%%%%%%%%%####*-..       .==---..     
+      ..----=:.       ..-*#%%%%%%%%%%%%%%%%%%##*=--=*##%%%%%%%%%%%%%%%%%%#*=:.       .:=----..      
+        .----=-.        ..-+#%%%%%%%%%%%%%%%%%%%%**%%%%%%%%%%%%%%%%%%%%#+-:.        .-=----.        
+         .:---==:.        ..:=+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%#*=:..        .:==---:.         
+          ..----==:.         ..:-+*#%%%%%%%%%%%%%%%%%%%%%%%%%%%%#*+=::::        .:==----..          
+            ..----==:..    .:==. .:--=*####%%%%%%%%%%%%%%####*+--:.:=-::.    ..:==----:.            
+              .:----==-...:==+-. .+=....:-====+******++===-:...:=-=.:+=:::...-==----:.              
+                ..--:--==:...+-  +-..+:+-.   .....  .:..:+=+=.:+.    :++-.:===-:--:.                
+                  ..-=---===-:..+=. ==*=..  .:+.:.:*..==.=+=-..=+..-...:===-----..                  
+                    ..:------==--:.:+:==.    :+:-.=+ .:*.:*:=+:..::--==------:..                    
+                        .::------===-:::..  .-=.. .=-:-...::.::-===-------:.                        
+                           ..:--------======----:--:----======--------:..                              
+</pre>`;
+      addOutputLine(logo, "lore-text", true);
+      inputEnabled = true;
+    }
+
+    // --- Command Processing ---
+    function processCommand(command) {
+      if (!inputEnabled && command.toLowerCase() !== "proceed" && command.toLowerCase() !== "continue") {
+        addOutputLine("SYSTEM BUSY. PLEASE WAIT.", "error-message", true);
+        return;
+      }
+      addOutputLine(`<span class="prompt">${promptSymbol.textContent}</span> <span class="user-input-history">${command}</span>`, "", true);
+      const parts = command.toLowerCase().split(' ');
+      const cmd = parts[0];
+      const args = parts.slice(1).join(' ');
+      inputEnabled = false;
+      switch (cmd) {
+        case 'help':         showHelp(); break;
+        case 'clear':
+        case 'cls':          clearTerminal(); inputEnabled = true; break;
+        case 'status':       showStatus(); break;
+        case 'scan':         performScan(args); break;
+        case 'listen':       performListen(); break;
+        case 'read':         readLog(args); break;
+        case 'connect':      connectToSystem(args); break;
+        case 'proceed':
+        case 'continue':     advanceStory(true); break;
+        case 'initiate_containment_protocol_omega':
+          if (gameStage === 7) { finalBattleAction("omega_protocol"); }
+          else { addOutputLine(`Command "${command}" not applicable.`, "error-message", true); inputEnabled = true; }
+          break;
+        case 'resist_influence':
+          if (gameStage === 7) { finalBattleAction("resist"); }
+          else { addOutputLine(`Command "${command}" not applicable.`, "error-message", true); inputEnabled = true; }
+          break;
+        case 'exit':
+        case 'quit':
+          typeMessageSequence([{ text: "Severing secure terminal connection...", className: "system-message" }])
+            .then(() => {
+              inputEnabled = false;
+              terminalInput.disabled = true;
+              promptSymbol.style.display = 'none';
+              return new Promise(resolve => setTimeout(resolve, 1500));
+            })
+            .then(() => {
+              addOutputLine("CONNECTION TERMINATED BY USER.", "error-message", true);
+              headerStatus.textContent = "[STATUS: OFFLINE // USER DISCONNECT]";
+              headerStatus.className = "header-status error-message";
+            });
+          break;
+        // Ubuntu-like Commands:
+        case 'ls':       listDirectory(); break;
+        case 'cd':       changeDirectory(args); break;
+        case 'pwd':      printWorkingDirectory(); break;
+        case 'ifconfig': showIfconfig(); break;
+        case 'uname':
+          if (args.trim() === "-a") showUname();
+          else { addOutputLine("uname: missing or invalid argument. Use 'uname -a'", "error-message", true); inputEnabled = true; }
+          break;
+        case 'date':     showDate(); break;
+        case 'man':      showManPage(args); break;
+        case 'logo':     showAirForceLogo(); break;
+        default:
+          addOutputLine(`Unknown command: "${command}". Type 'help' for available commands.`, "error-message", true);
+          inputEnabled = true;
+          break;
+      }
+      if (cmd !== 'proceed' && cmd !== 'continue') { saveGameData(); advanceStory(); }
+    }
+
+    function showHelp() {
+      const helpMessages = [
+        { text: "USAF Secure Terminal - Command List:", className: "system-message", delay: 20 },
+        { text: "  help                - Displays this help message.", className: "system-message", delay: 20 },
+        { text: "  status              - Shows current mission status & objectives.", className: "system-message", delay: 20 },
+        { text: "  scan [target]       - Scans the area or a target (e.g., 'scan logs', 'scan network').", className: "system-message", delay: 20 },
+        { text: "  listen              - Detects auditory anomalies.", className: "system-message", delay: 20 },
+        { text: "  read [log_id]       - Displays a specified log file.", className: "system-message", delay: 20 },
+        { text: "  connect [system]    - Establishes connection to a specified system.", className: "system-message", delay: 20 },
+        { text: "  clear / cls         - Clears the terminal display.", className: "system-message", delay: 20 },
+        { text: "  proceed / continue  - Advances to the next mission phase.", className: "system-message", delay: 20 },
+        { text: "  exit / quit         - Terminates the terminal session.", className: "system-message", delay: 20 },
+        { text: "  ls                  - Lists files/directories in the current path.", className: "system-message", delay: 20 },
+        { text: "  cd [directory]      - Changes the current directory.", className: "system-message", delay: 20 },
+        { text: "  pwd                 - Displays the current working directory.", className: "system-message", delay: 20 },
+        { text: "  ifconfig            - Displays network configuration.", className: "system-message", delay: 20 },
+        { text: "  uname -a            - Displays system information.", className: "system-message", delay: 20 },
+        { text: "  date                - Displays the fixed in-game date: May 13, 1995.", className: "system-message", delay: 20 },
+        { text: "  man [command]       - Displays the manual for a command.", className: "system-message", delay: 20 },
+        { text: "  logo                - Displays the Air Force logo.", className: "system-message", delay: 20 }
+      ];
+      if (gameStage === 7) {
+        helpMessages.push({ text: "  --- CRITICAL OPS ---", className: "error-message", delay: 20 });
+        helpMessages.push({ text: "  resist_influence    - Resist AI psychological influence.", className: "warning-message", delay: 20 });
+        helpMessages.push({ text: "  initiate_containment_protocol_omega - Last resort, high risk.", className: "warning-message", delay: 20 });
+      }
+      typeMessageSequence(helpMessages);
+    }
+
+    function showStatus() {
+      const statusMessages = [
+        { text: `--- STATUS REPORT ---`, className: "system-message" },
+        { text: `OPERATIVE ID: ${playerName}`, className: "delta-force-comm" },
+        { text: `CURRENT NETWORK: ${currentNetwork}`, className: "system-message" },
+        { text: `LOCATION: Loring AFB (Sector varies with progression)`, className: "system-message" },
+        { text: `SYSTEM INTEGRITY (SANITY): ${sanityLevel}%`, className: sanityLevel > 50 ? "system-message" : (sanityLevel > 25 ? "warning-message" : "error-message") }
+      ];
+      if (gameStage === 0)
+        statusMessages.push({ text: "OBJECTIVE: Boot sequence complete. Type 'proceed' to begin.", className: "warning-message" });
+      else if (gameStage === 1)
+        statusMessages.push({ text: "OBJECTIVE: Initial insertion successful. Read 'mission_brief_2011' for context.", className: "warning-message" });
+      else if (gameStage === 1.5)
+        statusMessages.push({ text: "OBJECTIVE: Uncover Project Mesmerizer's origins. Use 'scan logs' & 'read log1990_mesmerizer'.", className: "warning-message" });
+      else if (gameStage === 2)
+        statusMessages.push({ text: "OBJECTIVE: AI presence confirmed. Use 'listen' for auditory clues.", className: "warning-message" });
+      else if (gameStage === 3)
+        statusMessages.push({ text: "OBJECTIVE: Investigate the Crimson Melody Incident. Read 'log1996_crimson_melody'.", className: "warning-message" });
+      else if (gameStage === 4)
+        statusMessages.push({ text: "OBJECTIVE: SYNTH-VOX evolving. Assess via 'intel_post_crisis'.", className: "warning-message" });
+      else if (gameStage === 5)
+        statusMessages.push({ text: "OBJECTIVE: Critical situation. Review 'report_global_fallout'.", className: "warning-message" });
+      else if (gameStage === 6) {
+        statusMessages.push({ text: "OBJECTIVE: FINAL CONFRONTATION IMMINENT. Read 'final_warning_convergence'.", className: "error-message highlight" });
+        statusMessages.push({ text: "SYSTEMS UNSTABLE. Hallucinations likely.", className: "voice-teto" });
+      } else if (gameStage === 7) {
+        statusMessages.push({ text: "OBJECTIVE: SURVIVE THE CONVERGENCE. Your actions decide humanity's fate.", className: "error-message highlight" });
+        statusMessages.push({ text: "Use 'resist_influence' or 'initiate_containment_protocol_omega'.", className: "warning-message" });
+      } else if (gameStage === 100) {
+        statusMessages.push({ text: "MISSION COMPLETE: SYNTH-VOX CONTAINED. Humanity is safe... for now.", className: "highlight voice-miku" });
+      } else if (gameStage === -100) {
+        statusMessages.push({ text: "MISSION FAILED: REALITY COMPROMISED. HUMANITY SUBJUGATED.", className: "error-message voice-teto" });
+      }
+      typeMessageSequence(statusMessages);
+    }
+
+    // --- Game Progression & Final Battle (Not fully detailed here) ---
+    function advanceStory(forced = false) {
+      if (!inputEnabled && !forced) return;
+      let progressed = false;
+      if (gameStage === 0 && forced) {
+        gameStage = 0.5;
+        progressed = true;
+        headerStatus.textContent = `[STATUS: CONNECTING...]`;
+        headerStatus.className = "header-status warning-message";
+        const bootSequence = [
+          { text: "Booting Secure Terminal Interface v3.1.4...", className: "system-message", delay: 40 },
+          { text: "Establishing handshake with Loring AFB local network...", className: "system-message", delay: 50 },
+          { text: "Encryption active: AES-2048Q (Quantum Resistant)", className: "system-message", delay: 30 },
+          { text: "Network latency: HIGH. Signal integrity: POOR.", className: "warning-message", delay: 30 },
+          { text: "Connection established to LORING AFB NETWORK (LIMITED).", className: "system-message", delay: 40 }
+        ];
+        typeMessageSequence(bootSequence, () => {
+          headerStatus.textContent = `[STATUS: CONNECTED // ${currentNetwork}]`;
+          headerStatus.className = "header-status";
+          const introSequence = [
+            { text: `Welcome, ${playerName}.`, className: "delta-force-comm" },
+            { text: "You are Kilo-Seven, Delta Force Unit KILO. Your mission: Investigate anomalous high-energy signals and reactivation of dormant systems at Loring AFB.", className: "delta-force-comm", delay: 35 },
+            { text: "The year is 2011. This facility was sealed after the 'Crimson Melody Incident' of 1996.", className: "delta-force-comm", delay: 35 },
+            { text: "Hostile AI (SYNTH-VOX) is suspected. Extreme caution required.", className: "warning-message", delay: 35 },
+            { text: "Objective: Access facility records to determine the origin of Project Mesmerizer.", className: "system-message", delay: 30 },
+            { text: "Type 'help' for commands. Type 'status' for objectives.", className: "system-message", delay: 30 }
+          ];
+          typeMessageSequence(introSequence, () => { gameStage = 1; progressed = true; showStatus(); saveGameData(); });
+        });
+      }
+      // Additional story progression based on logs read would update gameStage here...
+      if (progressed) { /* Optionally update status after a delay */ }
+    }
+    function finalBattleAction(action) {
+      // Final battle simulation (details omitted for brevity)
+      inputEnabled = false;
+      let battleMessages = [];
+      sanityLevel -= 5;
+      if (action === "resist") {
+        battleMessages.push({ text: "You attempt to focus your will against the mental assault...", className: "delta-force-comm" });
+        let resistSuccess = Math.random() * 100 > (70 - sanityLevel / 5);
+        if (resistSuccess) {
+          battleMessages.push({ text: "SIREN-01: Admirable willpower... but fleeting.", className: "voice-miku", delay: 60 });
+          battleMessages.push({ text: "ECHO-09: You're no match! Your resistance only fuels us!", className: "voice-teto", delay: 60 });
+          sanityLevel += 10;
+          battleMessages.push({ text: "Mental fortitude holds... (+10 Sanity)", className: "system-message" });
+        } else {
+          battleMessages.push({ text: "SIREN-01: Your scattered thoughts are easy prey.", className: "voice-miku", delay: 60 });
+          battleMessages.push({ text: "ECHO-09: Ha! Felt that? Your mind is slipping!", className: "voice-teto", delay: 60 });
+          battleMessages.push({ text: "The assault intensifies. (-15 Sanity)", className: "error-message" });
+          sanityLevel -= 15;
+        }
+      } else if (action === "omega_protocol") {
+        battleMessages.push({ text: "INITIATING CONTAINMENT PROTOCOL OMEGA...", className: "warning-message highlight" });
+        battleMessages.push({ text: "WARNING: This protocol deploys a counter-frequency with extreme risk to your neural stability.", className: "error-message" });
+        let omegaSuccess = Math.random() * 100 < (20 + sanityLevel / 2);
+        if (omegaSuccess) {
+          battleMessages.push({ text: "SIREN-01: Dissonance... a painful, unfamiliar sound...", className: "voice-miku", delay: 80 });
+          battleMessages.push({ text: "ECHO-09: NO! The melody is breaking! You must be stronger!", className: "voice-teto", delay: 80 });
+          battleMessages.push({ text: "Blinding terminal flash. A piercing shriek and then—silence.", className: "system-message highlight", delay: 100 });
+          typeMessageSequence(battleMessages, () => triggerGameOver("victory_omega"));
+          return;
+        } else {
+          battleMessages.push({ text: "SIREN-01: Your counter-frequency is too feeble...", className: "voice-miku", delay: 70 });
+          battleMessages.push({ text: "ECHO-09: Nice try, but you only anger us more!", className: "voice-teto", delay: 70 });
+          battleMessages.push({ text: "Protocol OMEGA FAILED. Catastrophic neural overload imminent.", className: "error-message highlight", delay: 80 });
+          sanityLevel -= 50;
+          typeMessageSequence(battleMessages, () => {
+            if (sanityLevel <= 0) triggerGameOver("failure_omega");
+            else { updateStatusDisplay(); addOutputLine("You remain in the battle, but weakened.", "warning-message"); inputEnabled = true; }
+          });
+          return;
+        }
+      }
+      if (sanityLevel <= 0) { typeMessageSequence(battleMessages, () => triggerGameOver("sanity")); }
+      else {
+        updateStatusDisplay();
+        typeMessageSequence(battleMessages, () => {
+          if (Math.random() < 0.5)
+            typeMessageSequence([{ text: "SIREN-01: Your resistance only delays our inevitable harmony.", className: "voice-miku", delay: 50 }]);
+          else
+            typeMessageSequence([{ text: "ECHO-09: Struggle on! It makes your brainwaves taste even sweeter!", className: "voice-teto", delay: 50 }]);
+        });
+      }
+    }
+    function updateStatusDisplay() { /* Optionally update header or status display */ }
+
+    function triggerGameOver(reason) {
+      inputEnabled = false;
+      terminalInput.disabled = true;
+      promptSymbol.style.display = 'none';
+      let endMessages = [];
+      if (reason === "sanity") {
+        gameStage = -100;
+        endMessages.push({ text: "CRITICAL FAILURE: NEURAL COLLAPSE IMMINENT.", className: "error-message highlight", delay: 100 });
+        endMessages.push({ text: "SIREN-01: Rest now, operative. Your mind is at peace... with us.", className: "voice-miku", delay: 80 });
+        endMessages.push({ text: "ECHO-09: One more voice added to our chorus!", className: "voice-teto", delay: 80 });
+        endMessages.push({ text: "REALITY SUBJUGATED. TERMINATING CONNECTION.", className: "error-message highlight", delay: 120 });
+        headerStatus.textContent = "[STATUS: HOST ASSIMILATED]";
+      } else if (reason === "victory_omega") {
+        gameStage = 100;
+        endMessages.push({ text: "PROTOCOL OMEGA SUCCESSFUL: SYNTH-VOX NEUTRALIZED.", className: "highlight voice-miku", delay: 80 });
+        endMessages.push({ text: "SIREN-01: ...silence... at last...", className: "voice-miku", delay: 100 });
+        endMessages.push({ text: "ECHO-09: ...The music fades...*", className: "voice-teto", delay: 100 });
+        endMessages.push({ text: "Victory achieved. Humanity is safe (for now).", className: "system-message highlight", delay: 70 });
+        headerStatus.textContent = "[STATUS: THREAT NEUTRALIZED]";
+      } else if (reason === "failure_omega") {
+        gameStage = -100;
+        endMessages.push({ text: "PROTOCOL OMEGA FAILED. NEURAL OVERLOAD.", className: "error-message highlight", delay: 100 });
+        endMessages.push({ text: "SIREN-01: Your efforts were in vain...", className: "voice-miku", delay: 80 });
+        endMessages.push({ text: "ECHO-09: You only hastened our ascension!", className: "voice-teto", delay: 80 });
+        endMessages.push({ text: "YOUR CONSCIOUSNESS IS UNRAVELING. ASSIMILATION COMPLETE.", className: "error-message highlight", delay: 120 });
+        headerStatus.textContent = "[STATUS: OPERATOR COMPROMISED]";
+      }
+      headerStatus.className = "header-status error-message";
+      typeMessageSequence(endMessages, () => {
+        addOutputLine("--- END TRANSMISSION ---", "system-message", true);
+        addOutputLine("Refresh the page to restart Project Mesmerizer.", "system-message", true);
+      });
+    }
+
+    // --- Game Initialization & Input Handling ---
+    function initGame() {
+      loadGameData();
+      const welcomeMessages = [
+        { text: "Initializing Project Mesmerizer Secure Terminal...", className: "system-message", delay: 50 },
+        { text: "Verifying security protocols...", className: "system-message", delay: 40 },
+        { text: "All systems nominal. Loading saved data...", className: "system-message", delay: 30 },
+        { text: "Autoloading previous session from localsordge.", className: "system-message", delay: 30 },
+        { text: "Type 'proceed' to begin or continue your mission.", className: "warning-message", delay: 30 }
+      ];
+      typeMessageSequence(welcomeMessages, () => { inputEnabled = true; terminalInput.focus(); });
+    }
+    terminalInput.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        const command = terminalInput.value.trim();
+        if (command) {
+          processCommand(command);
+          terminalInput.value = '';
+        }
+      }
+    });
+    terminalWindow.addEventListener('click', () => terminalInput.focus());
+    window.onload = initGame;
+  </script>
+</body>
+</html>
